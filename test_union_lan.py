@@ -36,13 +36,24 @@ class DiscoveryTests(unittest.TestCase):
         self.manager.save({'nodos': {'telefono': self.node}, 'redes': ['192.168.1.0/29']})
 
     def test_reassigned_ip_does_not_impersonate_registered_device(self):
-        def available(ip, port):
+        def available(ip, port, **kwargs):
             return {'192.168.1.5': OTHER_KEY, '192.168.1.6': DEVICE_KEY}.get(ip)
         with patch.object(lan, 'probe', side_effect=available), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(self.manager.resolve('telefono'), ('192.168.1.6', 8022))
         stored = self.manager.load()['nodos']['telefono']
         self.assertEqual(stored['ip'], '192.168.1.6')
         self.assertEqual(stored['clave'], DEVICE_KEY)
+
+    def test_known_address_tolerates_lan_latency_without_rescanning(self):
+        def delayed_connect(address, timeout):
+            if timeout < 1:
+                raise TimeoutError('Respuesta de la LAN demorada por carga')
+            return contextlib.nullcontext()
+        result = type('Result', (), {'stdout': '[192.168.1.5]:8022 ' + DEVICE_KEY + '\n'})()
+        with patch.object(lan.socket, 'create_connection', side_effect=delayed_connect), \
+             patch.object(lan.subprocess, 'run', return_value=result), \
+             patch.object(self.manager, 'networks', side_effect=AssertionError('No debe barrer la LAN')):
+            self.assertEqual(self.manager.resolve('telefono'), ('192.168.1.5', 8022))
 
     def test_unknown_host_key_is_never_adopted(self):
         with patch.object(lan, 'probe', return_value=OTHER_KEY), contextlib.redirect_stderr(io.StringIO()):

@@ -67,14 +67,16 @@ def validate_node(alias, ip, user, key, port=8022):
             "clave": public_key(key), "puerto": int(port)}
 
 
-def probe(ip, port):
+def probe(ip, port, patient=False):
     """Consultar una clave no autoriza conexiones: luego se compara con la registrada."""
     try:
-        with socket.create_connection((ip, port), timeout=0.35):
+        # La IP conocida puede responder mas despacio bajo carga de Wi-Fi/CPU.
+        # El barrido mantiene su limite corto para no alargar toda la subred.
+        with socket.create_connection((ip, port), timeout=3 if patient else 0.35):
             pass
         result = subprocess.run(
-            ["ssh-keyscan", "-T", "2", "-p", str(port), "-t", "ed25519", ip],
-            capture_output=True, text=True, timeout=3)
+            ["ssh-keyscan", "-T", "5" if patient else "2", "-p", str(port), "-t", "ed25519", ip],
+            capture_output=True, text=True, timeout=6 if patient else 3)
         for line in result.stdout.splitlines():
             parts = line.split()
             if len(parts) == 3 and parts[1] == "ssh-ed25519":
@@ -224,7 +226,7 @@ class Manager:
         if alias not in data["nodos"]:
             raise ValueError(f"Dispositivo desconocido: {alias}")
         node = data["nodos"][alias]
-        if not force and probe(node["ip"], node["puerto"]) == node["clave"]:
+        if not force and probe(node["ip"], node["puerto"], patient=True) == node["clave"]:
             return node["ip"], node["puerto"]
         networks = self.networks(data, node)
         print(f"Buscando {alias} por su clave SSH en {', '.join(map(str, networks))}...", file=sys.stderr)
