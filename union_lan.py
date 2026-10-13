@@ -357,6 +357,8 @@ def serve(manager, args):
 def proxy(manager, alias):
     ip, port = manager.resolve(alias)
     with socket.create_connection((ip, port), timeout=5) as remote:
+        # Igual que el transporte TCP de SSH: no retrasar paquetes pequenos.
+        remote.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         remote.settimeout(None)
         inputs = [0, remote]
         while remote in inputs:
