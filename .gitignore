@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.ssh/
+.config/
+*.pem
+*.key
+union-lan-incorporar.sh

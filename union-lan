@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Copyright 2026 Yextep. See LICENSE and NOTICE for the applicable terms.
+set -euo pipefail
+exec python3 "$(dirname "$(readlink -f "$0")")/union_lan.py" "$@"

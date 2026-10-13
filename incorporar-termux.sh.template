@@ -1,0 +1,61 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Copyright 2026 Yextep. See LICENSE and NOTICE for the applicable terms.
+set -euo pipefail
+umask 077
+
+central_key=@CENTRAL_KEY@
+central_url=@CENTRAL_URL@
+invitation_token=@TOKEN@
+node_alias=@ALIAS@
+
+if [ -z "${PREFIX:-}" ] || [ ! -x "$PREFIX/bin/pkg" ] || [ "$(id -u)" = 0 ]; then
+    printf '%s\n' 'Ejecuta este script en Termux, fuera de Debian. Usa exit para salir de Debian.' >&2
+    exit 1
+fi
+
+if ! command -v sshd >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+    pkg install -y openssh curl
+fi
+
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+touch "$HOME/.ssh/authorized_keys"
+key_found=0
+while IFS= read -r authorized_line || [ -n "$authorized_line" ]; do
+    read -r authorized_type authorized_blob authorized_comment <<< "$authorized_line"
+    if [ "$authorized_type $authorized_blob" = "$central_key" ]; then
+        key_found=1
+        break
+    fi
+done < "$HOME/.ssh/authorized_keys"
+if [ "$key_found" = 0 ]; then
+    printf '\n%s\n' "$central_key" >> "$HOME/.ssh/authorized_keys"
+fi
+chmod 600 "$HOME/.ssh/authorized_keys"
+ssh-keygen -A
+
+# Arranca al abrir Termux. Termux:Boot puede ejecutar el mismo archivo al reiniciar.
+mkdir -p "$HOME/.local/bin" "$HOME/.termux/boot"
+printf '%s\n' "#!$PREFIX/bin/sh" \
+    "\"$PREFIX/bin/sshd\" -p 8022 >/dev/null 2>&1 || true" \
+    > "$HOME/.local/bin/union-lan-start"
+chmod 700 "$HOME/.local/bin/union-lan-start"
+cp "$HOME/.local/bin/union-lan-start" "$HOME/.termux/boot/90-union-lan"
+chmod 700 "$HOME/.termux/boot/90-union-lan"
+touch "$HOME/.bashrc"
+if ! grep -qxF '# union-lan: iniciar SSH' "$HOME/.bashrc"; then
+    printf '\n%s\n%s\n' '# union-lan: iniciar SSH' \
+        '[ ! -x "$HOME/.local/bin/union-lan-start" ] || "$HOME/.local/bin/union-lan-start"' \
+        >> "$HOME/.bashrc"
+fi
+"$HOME/.local/bin/union-lan-start"
+
+host_key=$(cut -d ' ' -f 1,2 "$PREFIX/etc/ssh/ssh_host_ed25519_key.pub")
+printf 'Registrando %s en el dispositivo central...\n' "$node_alias"
+curl --fail-with-body --silent --show-error --connect-timeout 5 --max-time 30 \
+    --data-urlencode "token=$invitation_token" \
+    --data-urlencode "usuario=$(whoami)" \
+    --data-urlencode "clave=$host_key" \
+    "$central_url/incorporar"
+printf '\n%s\n' 'Listo. SSH arrancara al abrir Termux.' \
+    'Para arrancar tambien al encender Android, instala Termux:Boot y abre esa app una vez.'
